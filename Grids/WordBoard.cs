@@ -408,6 +408,62 @@ class WordBoard
             => where.CompareTo(other.where);
     }
 
+    public readonly struct ClueNumberPosition
+    {
+        public readonly int number, x, y;
+
+        public ClueNumberPosition(int use_number, int use_x, int use_y)
+        {
+            number = use_number;
+            x = use_x;
+            y = use_y;
+        }
+    }
+
+    public List<ClueNumberPosition> GetClueLocations()
+    {
+        List<ClueNumberPosition> result = new();
+
+        if (usedWords.Count == 0)
+            return result;
+
+        List<CluePosition> inBoardOrder = new(usedWords.Select(kvp => new CluePosition(kvp.Key, kvp.Value)));
+        inBoardOrder.Sort();
+
+        int nextClueNumber = 1;
+
+        for (int ix = 0; ix < inBoardOrder.Count; ++ix)
+        {
+            CluePosition here = inBoardOrder[ix];
+            string? aw = null, dw = null;
+            if (here.where.Direction == WordPosition.WordDirection.Across)
+                aw = here.word;
+            else
+                dw = here.word;
+
+            if (ix < inBoardOrder.Count - 1)
+            {
+                CluePosition after = inBoardOrder[ix + 1];
+                if (here.where.X == after.where.X && here.where.Y == after.where.Y)
+                {
+                    // Debug.Assert(here.where.Direction != after.where.Direction);
+                    if (after.where.Direction == WordPosition.WordDirection.Across)
+                        aw = after.word; // should never happen, if the sort is working
+                    else
+                        dw = after.word;
+                    ++ix; // skip the next word, already done
+                }
+            }
+
+            if (aw != null || dw != null)
+                result.Add(new(nextClueNumber, here.where.X, here.where.Y));
+
+            ++nextClueNumber;
+        }
+
+        return result;
+    }
+
     public void GetNumberedWords(out List<NumberedWord> across, out List<NumberedWord> down)
     {
         across = new();
@@ -446,8 +502,8 @@ class WordBoard
 
             if (aw != null)
                 across.Add(new(nextClueNumber, aw));
-            if (aw != null)
-                across.Add(new(nextClueNumber, aw));
+            if (dw != null)
+                down.Add(new(nextClueNumber, dw));
 
             ++nextClueNumber;
         }
