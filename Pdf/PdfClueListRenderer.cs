@@ -60,8 +60,8 @@ public class PdfClueListRenderer
 
         float height = float.NaN;
 
-        try
-        {
+        // try
+        // {
             using (MemoryStream stream = new MemoryStream())
             using (PdfWriter writer = new PdfWriter(stream))
             using (PdfDocument pdfdoc = new PdfDocument(writer))
@@ -78,13 +78,13 @@ public class PdfClueListRenderer
                 //sw.Stop();
                 //Debug.WriteLine($"Calculated cluelist height={height}pt in {sw.ElapsedMilliseconds}ms");
             }
-        }
-        catch (PdfException ex)
-        {
-            // DocumentHasNoPages is expected
-            // if (ex.Message != PdfException.DocumentHasNoPages)
-                throw;
-        }
+        // }
+        // catch (PdfException ex)
+        // {
+        //     // DocumentHasNoPages is expected
+        //     // if (ex.Message != PdfException.DocumentHasNoPages)
+        //         throw;
+        // }
 
         return height;
     }

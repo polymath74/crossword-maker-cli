@@ -3,6 +3,7 @@
 using CrosswordMaker.Files;
 using CrosswordMaker.Generator;
 using CrosswordMaker.Grids;
+using CrosswordMaker.Pdf;
 using CrosswordMaker.Words;
 
 namespace CrosswordMaker;
@@ -14,9 +15,13 @@ class Program
         //     { "" }
         // };
 
+        Console.WriteLine(Directory.GetCurrentDirectory());
+
+        string title = args[0];
+
         Dictionary<string, DefinedWord> allWords = new();
 
-        foreach (var path in args) {
+        foreach (var path in args[1..]) {
             var fileWords = await WordListFile.LoadWordsAsync(path);
             Console.WriteLine($"{path}: {fileWords.Count} words");
 
@@ -47,6 +52,32 @@ class Program
         {
             Console.WriteLine();
             Console.WriteLine(board);
+
+            board.GetNumberedWords(out var across, out var down);
+
+            Console.WriteLine("Writing PDF");
+            
+            var pdfHelper = new PdfOutputHelper(board,
+                across.Select(nw => new NumberedClueWord(nw.Number, nw.Word, allWords[nw.Word].Clue)),
+                down.Select(nw => new NumberedClueWord(nw.Number, nw.Word, allWords[nw.Word].Clue)));
+            pdfHelper.Initialize();
+
+            pdfHelper.Title = title;
+
+            pdfHelper.RenderSolution = false;
+            using (var cs = new FileStream("crossword.pdf", FileMode.Create))
+            {
+                pdfHelper.ChooseLayout();
+                pdfHelper.WritePdf(cs);
+            }
+
+            pdfHelper.RenderSolution = true;
+            using (var ss = new FileStream("solution.pdf", FileMode.Create))
+            {
+                pdfHelper.ChooseLayout();
+                pdfHelper.WritePdf(ss);
+            }
+
         }
         else
         {

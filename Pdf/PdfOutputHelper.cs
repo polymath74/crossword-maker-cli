@@ -382,10 +382,10 @@ class PdfOutputHelper
 
     private void LoadFonts()
     {
-        RegularFont = PdfFontFactory.CreateFont(@"..\fonts\FreeSans.ttf");
-        BoldFont = PdfFontFactory.CreateFont(@"..\fonts\FreeSansBold.ttf");
-        ObliqueFont = PdfFontFactory.CreateFont(@"..\fonts\FreeSansOblique");
-        BoldObliqueFont = PdfFontFactory.CreateFont(@"..\fonts\FreeSansBoldOblique");
+        RegularFont = PdfFontFactory.CreateFont(@"fonts/FreeSans.ttf");
+        BoldFont = PdfFontFactory.CreateFont(@"fonts/FreeSansBold.ttf");
+        ObliqueFont = PdfFontFactory.CreateFont(@"fonts/FreeSansOblique.ttf");
+        BoldObliqueFont = PdfFontFactory.CreateFont(@"fonts/FreeSansBoldOblique.ttf");
     }
 
     private void CreateRenderers()
