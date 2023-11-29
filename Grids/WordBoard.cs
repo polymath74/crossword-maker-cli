@@ -80,7 +80,7 @@ class WordBoard
         if (!Any())
             return string.Empty;
 
-        StringBuilder sb = new StringBuilder();
+        StringBuilder sb = new();
         for (int y = Top; y <= Bottom; ++y)
         {
             for (int x = Left; x <= Right; ++x)
@@ -95,7 +95,7 @@ class WordBoard
         if (!Any())
             return string.Empty;
 
-        StringBuilder sb = new StringBuilder();
+        StringBuilder sb = new();
         sb.AppendLine($"GRID,{Height},{Width}");
         for (int y = Top; y <= Bottom; ++y)
         {
