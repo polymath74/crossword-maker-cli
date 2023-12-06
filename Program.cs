@@ -3,7 +3,6 @@
 using CrosswordMaker.Files;
 using CrosswordMaker.Generator;
 using CrosswordMaker.Grids;
-using CrosswordMaker.Pdf;
 using CrosswordMaker.Words;
 
 namespace CrosswordMaker;
@@ -56,7 +55,8 @@ class Program
             board.GetNumberedWords(out var across, out var down);
 
             Console.WriteLine("Writing PDF");
-            
+
+            /*
             var pdfHelper = new PdfOutputHelper(board,
                 across.Select(nw => new NumberedClueWord(nw.Number, nw.Word, allWords[nw.Word].Clue)),
                 down.Select(nw => new NumberedClueWord(nw.Number, nw.Word, allWords[nw.Word].Clue)));
@@ -77,6 +77,16 @@ class Program
                 pdfHelper.ChooseLayout();
                 pdfHelper.WritePdf(ss);
             }
+            */
+
+            var doc = new PdfDocument("crossword.pdf");
+            doc.Begin();
+            var page = new PdfPage(PdfPage.A4);
+            page.AddRectangle(Rectangle.FromSize(20f, 20f, 30f, 40f));
+            page.AddText(new Point(60f, 70f), "Hello", doc.GetFont(PdfFont.Helvetica), 12f);
+            page.ClosePath();
+            doc.AddPage(page);
+            doc.End();
 
         }
         else
