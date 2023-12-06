@@ -1,4 +1,4 @@
-﻿// using Mono.Options;
+﻿using Mono.Options;
 
 using CrosswordMaker.Files;
 using CrosswordMaker.Generator;
@@ -8,31 +8,62 @@ using CrosswordMaker.Output;
 namespace CrosswordMaker;
 class Program
 {
+    readonly static Dictionary<string, string> allWords = new();
+
+    static void LoadWords(string path)
+    {
+        var fileWords = WordListFile.LoadWords(path);
+        Console.WriteLine($"{path}: {fileWords.Count} words");
+
+        int skipped = 0;
+        foreach (var word in fileWords) {
+            if (!allWords.ContainsKey(word.Word))
+                allWords[word.Word] = word.Clue;
+            else
+                ++skipped;
+        }
+        if (skipped > 0)
+            Console.WriteLine($"skipped {skipped} previously loaded");
+    }
+
     static async Task Main(string[] args)
     {
-        // var opts = new OptionSet() {
-        //     { "" }
-        // };
+        string? title = null;
+        string? crosswordPath = null;
+        string? solutionPath = null;
+        bool showHelp = false;
 
-        Console.WriteLine(Directory.GetCurrentDirectory());
+        var opts = new OptionSet() {
+            { "t|title=", "Crossword title (displayed above the grid)",
+                v => title = v },
+            { "c|crossword=", "Path for crossword output (PDF)",
+                v => crosswordPath = v },
+            { "s|solution=", "Path for solution output (PDF)",
+                v => solutionPath = v },
+            { "w|words=", "Path of word list text file", 
+                v => LoadWords(v) },
+            { "h|help", "Show help",
+                v => showHelp = true },
+        };
 
-        string title = args[0];
+        try
+        {
+            var rest = opts.Parse(args);
+            if (rest != null)
+                foreach (string v in rest)
+                    LoadWords(v);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            return;
+        }
 
-        Dictionary<string, string> allWords = new();
-
-        foreach (var path in args[1..]) {
-            var fileWords = await WordListFile.LoadWordsAsync(path);
-            Console.WriteLine($"{path}: {fileWords.Count} words");
-
-            int skipped = 0;
-            foreach (var word in fileWords) {
-                if (!allWords.ContainsKey(word.Word))
-                    allWords[word.Word] = word.Clue;
-                else
-                    ++skipped;
-            }
-            if (skipped > 0)
-                Console.WriteLine($"skipped {skipped} previously loaded");
+        if (showHelp || allWords.Count == 0)
+        {
+            Console.WriteLine("Options:");
+            opts.WriteOptionDescriptions(Console.Out);
+            return;
         }
 
         CancellationTokenSource tokenSource = new();
@@ -58,22 +89,25 @@ class Program
 
             var pdfHelper = new PdfOutputHelper(board, allWords);
 
-            pdfHelper.Title = title;
+            pdfHelper.Title = title ?? string.Empty;
 
-            pdfHelper.RenderSolution = false;
-            pdfHelper.WritePdf("crossword.pdf");
+            if (crosswordPath == null && solutionPath == null)
+            {
+                crosswordPath = "crossword.pdf";
+                solutionPath = "solution.pdf";
+            }
 
-            pdfHelper.RenderSolution = true;
-            pdfHelper.WritePdf("solution.pdf");
+            if (crosswordPath != null)
+            {
+                pdfHelper.RenderSolution = false;
+                pdfHelper.WritePdf(crosswordPath);
+            }
 
-            // var doc = new PdfDocument("crossword.pdf");
-            // doc.Begin();
-            // var page = new PdfPage(PdfPage.A4);
-            // page.AddRectangle(Rectangle.FromSize(20f, 20f, 30f, 40f));
-            // page.AddText(new Point(60f, 70f), "Hello", doc.GetFont(PdfFont.Helvetica), 12f);
-            // page.ClosePath();
-            // doc.AddPage(page);
-            // doc.End();
+            if (solutionPath != null)
+            {
+                pdfHelper.RenderSolution = true;
+                pdfHelper.WritePdf(solutionPath);
+            }
 
         }
         else

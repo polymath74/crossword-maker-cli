@@ -32,7 +32,7 @@ static class WordListFile
         }
     }
 
-    public static async Task<List<DefinedWord>> LoadWordsAsync(string path)
+    public static List<DefinedWord> LoadWords(string path)
     {
         List<DefinedWord> words = new();
 
@@ -40,7 +40,7 @@ static class WordListFile
         using var reader = new StreamReader(stream);
         
         string? line;
-        while ((line = await reader.ReadLineAsync()) != null)
+        while ((line = reader.ReadLine()) != null)
         {
             int cx = line.IndexOf('=');
             if (cx < 2)
