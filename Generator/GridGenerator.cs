@@ -43,7 +43,12 @@ class GridGenerator
             get
             {
                 if (_score < 0d)
-                    _score = Board.CountIntersections /* * 1000d */ * Occupied;
+                {
+                    double aspect = AspectRatio;
+                    if (aspect < 1d)
+                        aspect = 1d/aspect;
+                    _score = Board.CountIntersections * 1000d + Occupied * 400d + 200d / Math.Abs(AspectRatio - 4d/3d);
+                }
                 return _score;
             }
         }

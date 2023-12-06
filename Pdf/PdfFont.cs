@@ -1,10 +1,12 @@
+using System.Diagnostics;
+
 namespace Pdf;
 
 public class PdfFont
 {
     public readonly float AverageWidth = 0.670f; // this is a conservate estimate only for line breaking
 
-    int localId;
+    readonly int localId;
 
     internal PdfFont(int useId)
     {
@@ -13,6 +15,7 @@ public class PdfFont
 
     public override string ToString()
     {
+        Debug.Assert(localId != 0);
         return $"/F{localId}";
     }
 

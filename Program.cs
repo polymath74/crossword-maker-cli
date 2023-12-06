@@ -3,7 +3,7 @@
 using CrosswordMaker.Files;
 using CrosswordMaker.Generator;
 using CrosswordMaker.Grids;
-using CrosswordMaker.Words;
+using CrosswordMaker.Output;
 
 namespace CrosswordMaker;
 class Program
@@ -18,7 +18,7 @@ class Program
 
         string title = args[0];
 
-        Dictionary<string, DefinedWord> allWords = new();
+        Dictionary<string, string> allWords = new();
 
         foreach (var path in args[1..]) {
             var fileWords = await WordListFile.LoadWordsAsync(path);
@@ -27,7 +27,7 @@ class Program
             int skipped = 0;
             foreach (var word in fileWords) {
                 if (!allWords.ContainsKey(word.Word))
-                    allWords[word.Word] = word;
+                    allWords[word.Word] = word.Clue;
                 else
                     ++skipped;
             }
@@ -56,37 +56,24 @@ class Program
 
             Console.WriteLine("Writing PDF");
 
-            /*
-            var pdfHelper = new PdfOutputHelper(board,
-                across.Select(nw => new NumberedClueWord(nw.Number, nw.Word, allWords[nw.Word].Clue)),
-                down.Select(nw => new NumberedClueWord(nw.Number, nw.Word, allWords[nw.Word].Clue)));
-            pdfHelper.Initialize();
+            var pdfHelper = new PdfOutputHelper(board, allWords);
 
             pdfHelper.Title = title;
 
             pdfHelper.RenderSolution = false;
-            using (var cs = new FileStream("crossword.pdf", FileMode.Create))
-            {
-                pdfHelper.ChooseLayout();
-                pdfHelper.WritePdf(cs);
-            }
+            pdfHelper.WritePdf("crossword.pdf");
 
             pdfHelper.RenderSolution = true;
-            using (var ss = new FileStream("solution.pdf", FileMode.Create))
-            {
-                pdfHelper.ChooseLayout();
-                pdfHelper.WritePdf(ss);
-            }
-            */
+            pdfHelper.WritePdf("solution.pdf");
 
-            var doc = new PdfDocument("crossword.pdf");
-            doc.Begin();
-            var page = new PdfPage(PdfPage.A4);
-            page.AddRectangle(Rectangle.FromSize(20f, 20f, 30f, 40f));
-            page.AddText(new Point(60f, 70f), "Hello", doc.GetFont(PdfFont.Helvetica), 12f);
-            page.ClosePath();
-            doc.AddPage(page);
-            doc.End();
+            // var doc = new PdfDocument("crossword.pdf");
+            // doc.Begin();
+            // var page = new PdfPage(PdfPage.A4);
+            // page.AddRectangle(Rectangle.FromSize(20f, 20f, 30f, 40f));
+            // page.AddText(new Point(60f, 70f), "Hello", doc.GetFont(PdfFont.Helvetica), 12f);
+            // page.ClosePath();
+            // doc.AddPage(page);
+            // doc.End();
 
         }
         else

@@ -21,19 +21,27 @@ public class PdfPage
 
     public void AddRectangle(Rectangle rectangle)
     {
-        contentStream.AddRange(Encoding.ASCII.GetBytes($"{rectangle.X1} {rectangle.Y1} {rectangle.Width} {rectangle.Height} re\n"));
+        contentStream.AddRange(Encoding.ASCII.GetBytes($"{rectangle.Left} {rectangle.Bottom} {rectangle.Width} {rectangle.Height} re\n"));
     }
 
     public void AddText(Point where, string text, PdfFont font, float size)
+        => AddText(where.X, where.Y, text, font, size);
+
+    public void AddText(float x, float y, string text, PdfFont font, float size)
     {
-        contentStream.AddRange(Encoding.ASCII.GetBytes($"BT {font} {size} Tf {where.X} {where.Y} Td ("));
+        contentStream.AddRange(Encoding.ASCII.GetBytes($"BT {font} {size} Tf {x} {y} Td ("));
         // contentStream.AddRange(Encoding.BigEndianUnicode.GetPreamble());
         // contentStream.AddRange(Encoding.BigEndianUnicode.GetBytes(PdfDocument.Escaped(text)));
         contentStream.AddRange(Encoding.ASCII.GetBytes(PdfDocument.Escaped(text)));
-        contentStream.AddRange(Encoding.ASCII.GetBytes($") Tj\n"));
+        contentStream.AddRange(Encoding.ASCII.GetBytes($") Tj ET\n"));
     }
 
-    public void ClosePath(bool stroke = true, bool fill = false)
+    public void LineWidth(float width)
+    {
+        contentStream.AddRange(Encoding.ASCII.GetBytes($"{width} w\n"));
+    }
+
+    public void ClosePath(bool stroke, bool fill)
     {
         byte op = stroke ? fill ? (byte)'b' : (byte)'s' : fill ? (byte)'f' : (byte)'n';
         contentStream.Add(op);

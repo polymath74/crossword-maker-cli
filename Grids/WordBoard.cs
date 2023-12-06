@@ -410,13 +410,13 @@ class WordBoard
 
     public readonly struct ClueNumberPosition
     {
-        public readonly int number, x, y;
+        public readonly int Number, X, Y;
 
         public ClueNumberPosition(int use_number, int use_x, int use_y)
         {
-            number = use_number;
-            x = use_x;
-            y = use_y;
+            Number = use_number;
+            X = use_x;
+            Y = use_y;
         }
     }
 

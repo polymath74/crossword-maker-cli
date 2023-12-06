@@ -1,18 +1,7 @@
-﻿/*
-using CrosswordMaker.Grids;
-using iText.IO.Font;
-using iText.IO.Font.Constants;
-using iText.Kernel.Colors;
-using iText.Kernel.Font;
-using iText.Kernel.Geom;
-using iText.Kernel.Pdf;
-using iText.Kernel.Pdf.Canvas;
-using iText.Layout;
-using iText.Layout.Element;
-using iText.Layout.Properties;
-using static iText.Kernel.Pdf.Canvas.PdfCanvasConstants;
+﻿using CrosswordMaker.Grids;
+using Pdf;
 
-namespace CrosswordMaker.Pdf;
+namespace CrosswordMaker.Output;
 
 class PdfCrosswordRenderer
 {
@@ -24,9 +13,7 @@ class PdfCrosswordRenderer
 
     public PdfPage? Page { get; set; }
     public PdfFont? Font { get; set; }
-    public Rectangle? FitBounds { get; set; }
-
-    private PdfCanvas? pdfCanvas;
+    public Rectangle FitBounds { get; set; }
 
     // all dimensions in PDF are in points (1/72 in)
 
@@ -72,7 +59,7 @@ class PdfCrosswordRenderer
     {
         bool fits = true;
 
-        float scale = Math.Min(FitScale(Board.Width, FitBounds!.GetWidth()), FitScale(Board.Height, FitBounds.GetHeight() - TitleBuffer));
+        float scale = Math.Min(FitScale(Board.Width, FitBounds.Width), FitScale(Board.Height, FitBounds.Height - TitleBuffer));
         if (scale * StdSquareSize < MinSquareSize)
         {
             scale = MinSquareSize / StdSquareSize;
@@ -83,8 +70,8 @@ class PdfCrosswordRenderer
         LetterSize = StdLetterSize * scale;
         ClueNumberSize = StdClueNumberSize * scale;
 
-        RenderTop = FitBounds.GetTop() - TitleBuffer;
-        RenderLeft = Position == CrosswordPosition.Left ? (FitBounds.GetLeft() + BoxThickness / 2f) : ((FitBounds.GetLeft() + FitBounds.GetRight() - RenderWidth) / 2f);
+        RenderTop = FitBounds.Top - TitleBuffer;
+        RenderLeft = Position == CrosswordPosition.Left ? (FitBounds.Left + BoxThickness / 2f) : ((FitBounds.Left + FitBounds.Right - RenderWidth) / 2f);
 
         isScaled = true;
         return fits;
@@ -101,7 +88,6 @@ class PdfCrosswordRenderer
 
         if (Page == null)
             throw new InvalidOperationException("Page needed before rendering can begin");
-        pdfCanvas = new PdfCanvas(Page);
 
         if (!string.IsNullOrEmpty(Title))
             DrawTitle();
@@ -124,34 +110,16 @@ class PdfCrosswordRenderer
 
     private void DrawTitle()
     {
-        Text text = new Text(Title)
-            .SetFont(Font)
-            .SetFontSize(TitleFontSize)
-            .SetUnderline();
-        Paragraph paragraph = new Paragraph(text)
-            .SetFixedLeading(0f)
-            .SetTextAlignment(TextAlignment.CENTER);
+        float y = RenderTop + TitleSpace;
+        float x = RenderLeft + RenderWidth/2f - Title.Length*0.330f; // approximately half the title width
 
-        Rectangle rect = new Rectangle(FitBounds);
-        if (Position == CrosswordPosition.Left)
-            rect.SetWidth(RenderWidth);
-        rect.SetHeight(TitleBuffer);
-        rect.SetY(RenderTop);
-        Canvas canvas = new Canvas(Page, rect);
-        canvas.Add(paragraph)
-            .Close();
+        Page!.AddText(x, y, Title, Font!, TitleFontSize);
+        Page.ClosePath(stroke: false, fill: true);
     }
 
     private void DrawLetterSquares()
     {
-        pdfCanvas!.SaveState()
-            .SetStrokeColor(ColorConstants.BLACK)
-            .SetLineWidth(BoxThickness)
-            .SetLineJoinStyle(LineJoinStyle.MITER)
-            .SetFillColor(ColorConstants.BLACK);
-
-        if (DrawSolution)
-            pdfCanvas.SetFontAndSize(Font, LetterSize);
+        Page!.LineWidth(BoxThickness);
 
         for (int y = Board.Top; y <= Board.Bottom; ++y)
             for (int x = Board.Left; x <= Board.Right; ++x)
@@ -160,67 +128,74 @@ class PdfCrosswordRenderer
                 if (ch != ' ')
                 {
                     var square = GetSquareRect(x, y);
-                    pdfCanvas.Rectangle(square).Stroke();
-
-                    if (DrawSolution)
-                    {
-                        float wd = Font!.GetWidth(ch, LetterSize);
-                        float ds = Font.GetDescent(ch, LetterSize);
-                        float ht = Font.GetAscent(ch, LetterSize) + ds;
-                        pdfCanvas.BeginText()
-                            .SetTextMatrix(square.GetCentreX() - wd / 2, square.GetCentreY() - ht / 2 + ds - ClueNumberSize / 4f)
-                            .ShowText(ch.ToString())
-                            .EndText();
-                    }
+                    Page.AddRectangle(square);
                 }
             }
 
-        pdfCanvas.RestoreState();
+        Page.ClosePath(stroke: true, fill: false);
+
+        if (!DrawSolution)
+            return;
+
+        for (int y = Board.Top; y <= Board.Bottom; ++y)
+            for (int x = Board.Left; x <= Board.Right; ++x)
+            {
+                char ch = Board.LetterAt(x, y);
+                if (ch != ' ')
+                {
+                    var square = GetSquareRect(x, y);
+
+                    float wd = LetterSize*0.330f; //Font!.Width(ch, LetterSize);
+                    float ds = LetterSize*0.2f; // Font.GetDescent(ch, LetterSize);
+                    float ht = LetterSize; // Font.GetAscent(ch, LetterSize) + ds;
+
+                    Page.AddText(square.CentreX - wd, square.Bottom + ds, ch.ToString(), Font!, LetterSize);
+                }
+            }
+
+        Page.ClosePath(stroke: false, fill: true);
+            
     }
 
     private void FillBlacks()
     {
-        pdfCanvas!.SaveState()
-            .SetFillColor(ColorConstants.DARK_GRAY);
+        // pdfCanvas!.SaveState()
+        //     .SetFillColor(ColorConstants.DARK_GRAY);
+
+        bool any = false;
 
         for (int y = Board.Top; y <= Board.Bottom; ++y)
             for (int x = Board.Left; x <= Board.Right; ++x)
                 if (Board.IsBlackSquare(x, y))
                 {
-                    pdfCanvas.Rectangle(GetSquareRect(x, y))
-                        .Fill();
+                    any = true;
+                    Page!.AddRectangle(GetSquareRect(x, y));
                 }
 
-        pdfCanvas.RestoreState();
+        if (any)
+            Page!.ClosePath(stroke: false, fill: true);
     }
 
     private void AddClueNumbers()
     {
-        pdfCanvas!.SaveState()
-            .SetFillColor(DrawSolution ? ColorConstants.DARK_GRAY : ColorConstants.BLACK)
-            .SetFontAndSize(Font, ClueNumberSize);
-
         foreach (var clue in Board.GetClueLocations())
         {
-            var square = GetSquareRect(clue.x, clue.y);
-            pdfCanvas.BeginText()
-                .SetTextMatrix(square.GetLeft() + ClueNumberOffsetLeft, square.GetTop() - ClueNumberOffsetTop)
-                .ShowText(clue.number.ToString())
-                .EndText();
+            // Console.WriteLine($"({clue.Number} @ {clue.X},{clue.Y})");
+
+            var square = GetSquareRect(clue.X, clue.Y);
+            Page!.AddText(square.Left + ClueNumberOffsetLeft, square.Top - ClueNumberOffsetTop, clue.Number.ToString(), Font!, ClueNumberSize);
         }
 
-        pdfCanvas.RestoreState();
+        Page!.ClosePath(stroke: false, fill: true);
     }
 
     private Rectangle GetSquareRect(int x, int y)
     {
-        return new Rectangle(RenderLeft + GetCanvasLeft(x), RenderBottom + GetCanvasBottom(y), (float)SquareSize, (float)SquareSize);
+        return Rectangle.FromSize(RenderLeft + GetSquareLeft(x), RenderBottom + GetSquareBottom(y), (float)SquareSize, (float)SquareSize);
     }
 
-    private float GetCanvasLeft(int x) => (float)((x - Board.Left) * SquareSize + BoxThickness / 2);
-    private float GetCanvasBottom(int y) => (float)((Board.Bottom - y) * SquareSize + BoxThickness / 2);
+    private float GetSquareLeft(int x) => (x - Board.Left) * SquareSize + BoxThickness / 2f;
+    private float GetSquareBottom(int y) => (Board.Bottom - y) * SquareSize + BoxThickness / 2f;
 
 
 }
-
-*/

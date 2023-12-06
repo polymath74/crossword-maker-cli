@@ -1,35 +1,17 @@
-﻿/*
-using iText.Kernel;
-using iText.Kernel.Exceptions;
-using iText.Kernel.Font;
-using iText.Kernel.Geom;
-using iText.Kernel.Pdf;
-using iText.Kernel.Pdf.Canvas;
-using iText.Kernel.Pdf.Xobject;
-using iText.Layout;
-using iText.Layout.Borders;
-using iText.Layout.Element;
-using iText.Layout.Layout;
-using iText.Layout.Properties;
-using iText.Layout.Renderer;
+﻿using CrosswordMaker.Grids;
+using Pdf;
 
-namespace CrosswordMaker.Pdf;
+namespace CrosswordMaker.Output;
 
-public class PdfClueListRenderer
+class PdfClueListRenderer
 {
     public enum ClueDirection { Across, Down }
     internal ClueDirection Direction { get; }
 
-    internal List<NumberedClueWord> Clues
-    {
-        get => _clues;
-        set { _clues = value; clueListTable = null; }
-    }
-    internal bool IncludeAnswers
-    {
-        get => _includeAnswers;
-        set { _includeAnswers = value; clueListTable = null; }
-    }
+    internal List<NumberedWord> Words = new();
+    internal Dictionary<string, string> Clues = new();
+
+    internal bool IncludeAnswers;
 
     public PdfFont? HeadingFont { get; set; }
     public PdfFont? ClueFont { get; set; }
@@ -40,125 +22,101 @@ public class PdfClueListRenderer
     public const float HeadingTextSize = 11f;
     public const float ClueTextSize = 11f;
     public const float ClueLeading = 15f;
+    public const float ClueHorizontalSeparation = ClueTextSize * 0.5f;
+    public const float ClueIndent = ClueTextSize * 1.5f + ClueHorizontalSeparation;
 
     public PdfClueListRenderer(ClueDirection dir)
     {
         Direction = dir;
     }
 
+    string GetClueString(NumberedWord word)
+    {
+        string clue = Clues[word.Word];
+        if (IncludeAnswers)
+            clue += $" ({word.Word})";
+        return clue;
+    }
+
+    int NumberOfLines(string clue, float width)
+    {
+        int lines = 1;
+
+        float lineWidth = 0f;
+        foreach (var word in clue.Split())
+        {
+            float wordWidth = word.Length * ClueTextSize * 0.660f;
+            lineWidth += wordWidth;
+            if (lineWidth > width)
+            {
+                ++lines;
+                lineWidth = width;
+            }
+        }
+
+        return lines;
+    }
+
     /// <summary>
     /// Calculate the height of this clue list, if bound to the specified width.
-    /// NB: This operation is SLOW. It uses an in-memory PDF file to calculate the needed height.
+    /// NB: This operation only estimates. (Hey, it's faster than the alternative!)
     /// </summary>
     /// <param name="width">Available width for the clue list, in PDF points.</param>
     /// <returns>Calculated height of the clue list, in PDF points.</returns>
     public float CalculateHeight(float width)
     {
-        //Stopwatch sw = new Stopwatch();
-        //sw.Start();
-
-        BuildClueListTable();
-
-        float height = float.NaN;
-
-        // try
-        // {
-            using (MemoryStream stream = new MemoryStream())
-            using (PdfWriter writer = new PdfWriter(stream))
-            using (PdfDocument pdfdoc = new PdfDocument(writer))
-            {
-                PageSize pageSize = new PageSize(width, 3000);
-                Document doc = new Document(pdfdoc, pageSize);
-
-                IRenderer tr = clueListTable!.CreateRendererSubTree();
-                LayoutResult layout = tr.SetParent(doc.GetRenderer()).Layout(
-                    new LayoutContext(new LayoutArea(1, new Rectangle(width, 3000))));
-
-                height = layout.GetOccupiedArea().GetBBox().GetHeight();
-
-                //sw.Stop();
-                //Debug.WriteLine($"Calculated cluelist height={height}pt in {sw.ElapsedMilliseconds}ms");
-            }
-        // }
-        // catch (PdfException ex)
-        // {
-        //     // DocumentHasNoPages is expected
-        //     // if (ex.Message != PdfException.DocumentHasNoPages)
-        //         throw;
-        // }
-
-        return height;
+        width -= ClueIndent;
+        return (Words.Sum(w => NumberOfLines(GetClueString(w), width)) + 2) * ClueLeading;
     }
 
     /// <summary>
-    /// Render the clue list to the <see cref="PdfCanvas"/> within the specified <c>Rectangle</c>.
+    /// Render the clue list to the <see cref="PdfPage"/> within the specified <c>Rectangle</c>.
+    /// <returns>Bottom boundary of the clue list, in PDF points.</returns>
     /// </summary>
-    public void RenderClueList(PdfCanvas pdfCanvas, Rectangle bounds)
+    public float RenderClueList(PdfPage page, Rectangle bounds)
     {
-        BuildClueListTable();
+        // Console.WriteLine($"RenderClueList({bounds})");
+        page.AddText(bounds.Left, bounds.Top - ClueLeading, Direction == ClueDirection.Across ? "Across" : "Down", HeadingFont!, HeadingTextSize);
 
-        Canvas canvas = new Canvas(pdfCanvas, bounds);
-        canvas.Add(clueListTable);
-        canvas.Close();
-    }
+        float y = bounds.Top - 3*ClueLeading;
+        float width = bounds.Width - ClueIndent;
 
-    /// <summary>
-    /// Render the clue list to the <c>Document</c> using its renderer.
-    /// </summary>
-    public void RenderClueList(Document doc)
-    {
-        BuildClueListTable();
-
-        doc.Add(clueListTable);
-    }
-
-    private List<NumberedClueWord> _clues = new();
-    private bool _includeAnswers;
-
-    private Table? clueListTable;
-
-    private void BuildClueListTable()
-    {
-        clueListTable = new Table(new float[] { 1, 20 });
-        clueListTable.SetBorder(Border.NO_BORDER);
-        Cell heading = new Cell(1, 2)
-            .SetBorder(Border.NO_BORDER)
-            .Add(new Paragraph(Direction.ToString())
-                .SetFont(HeadingFont)
-                .SetFontSize(ClueTextSize));
-        clueListTable.AddHeaderCell(heading);
-        foreach (var clue in Clues)
+        foreach (var word in Words)
         {
-            Cell cell = new Cell()
-                .SetBorder(Border.NO_BORDER)
-                .SetTextAlignment(TextAlignment.RIGHT)
-                .SetPadding(0f)
-                .SetPaddingTop(2f)
-                .SetPaddingRight(6f)
-                .Add(new Paragraph(clue.Number.ToString())
-                    .SetFont(ClueFont)
-                    .SetFontSize(ClueTextSize)
-                    .SetFixedLeading(ClueLeading));
-            clueListTable.AddCell(cell);
-            Paragraph paragraph = new Paragraph(clue.Clue)
-                    .SetFont(ClueFont)
-                    .SetFontSize(ClueTextSize)
-                    .SetFixedLeading(ClueLeading);
-            if (IncludeAnswers)
+            page.AddText(bounds.Left, y, word.Number.ToString(), ClueFont!, ClueTextSize);
+
+            string clue = GetClueString(word);
+            float lineWidth = 0f;
+            StringBuilder line = new();
+            foreach (var w in clue.Split())
             {
-                paragraph.Add(new Text($" ({clue.Word})")
-                    .SetFont(AnswerFont)
-                    .SetFontSize(ClueTextSize));
+                float wordWidth = w.Length * ClueTextSize * 0.660f;
+                lineWidth += wordWidth;
+                if (lineWidth <= width)
+                {
+                    line.Append(w);
+                    line.Append(' ');
+                }
+                else
+                {
+                    page.AddText(bounds.Left + ClueIndent, y, line.ToString(), ClueFont!, ClueTextSize);
+                    y -= ClueLeading;
+                    lineWidth = width;
+                    line = new();
+                    line.Append(w);
+                    line.Append(' ');
+                }
             }
-            cell = new Cell()
-                .SetBorder(Border.NO_BORDER)
-                .SetTextAlignment(TextAlignment.LEFT)
-                .SetPadding(0f)
-                .SetPaddingTop(2f)
-                .Add(paragraph);
-            clueListTable.AddCell(cell);
+
+            page.AddText(bounds.Left + ClueIndent, y, line.ToString(), ClueFont!, ClueTextSize);
+            y -= ClueLeading;
         }
 
+        page.ClosePath(stroke: false, fill: true);
+
+        return y;
     }
+
+    private bool _includeAnswers;
+
 }
-*/

@@ -1,5 +1,3 @@
-using CrosswordMaker.Words;
-
 namespace CrosswordMaker.Files;
 
 static class WordListFile
@@ -15,6 +13,23 @@ static class WordListFile
                 sb.Append(char.ToUpper(ch));
         }
         return sb.ToString();
+    }
+
+    public record DefinedWord
+    {
+        public readonly string Word;
+        public readonly string Clue;
+
+        public DefinedWord(string word, string clue)
+        {
+            Word = word;
+            Clue = clue;
+        }
+
+        public override string ToString()
+        {
+            return $"{Word}={Clue}";
+        }
     }
 
     public static async Task<List<DefinedWord>> LoadWordsAsync(string path)

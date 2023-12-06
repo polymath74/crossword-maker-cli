@@ -1,20 +1,23 @@
-﻿/*
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using CrosswordMaker.Grids;
+using Pdf;
 
-namespace CrosswordMaker.Pdf;
+namespace CrosswordMaker.Output;
 
 class PdfOutputHelper
 {
     readonly WordBoard Board;
-    readonly List<NumberedClueWord> Across;
-    readonly List<NumberedClueWord> Down;
+    readonly Dictionary<string, string> Clues;
 
-    public PdfOutputHelper(WordBoard board, IEnumerable<NumberedClueWord> across, IEnumerable<NumberedClueWord> down)
+    public PdfOutputHelper(WordBoard board, Dictionary<string, string> use_clues)
     {
         Board = board;
-        Across = new(across);
-        Down = new(down);
+        Clues = use_clues;
+
+        crosswordRenderer = new PdfCrosswordRenderer();
+
+        acrossRenderer = new PdfClueListRenderer(PdfClueListRenderer.ClueDirection.Across);
+        downRenderer = new PdfClueListRenderer(PdfClueListRenderer.ClueDirection.Down);
     }
     
     public bool RenderSolution { get; set; }
@@ -24,21 +27,17 @@ class PdfOutputHelper
     public enum Orientation { Portrait, Landscape }
     public Orientation PageOrientation { get; private set; }
 
-    static Rectangle GetInset(Rectangle from, float margin)
-    {
-        return new Rectangle(from.GetX() + margin, from.GetY() + margin, from.GetWidth() - 2*margin, from.GetHeight() - 2*margin);
-    }
+    Point paperSize;
+    Rectangle fitBounds;
 
-    public PageSize PaperSize
+    public Point PaperSize
     {
-        get => _paperSize;
+        get => paperSize;
         private set {
-            _paperSize = value;
-            _fitBounds = GetInset(_paperSize, PageMargin);
+            paperSize = value;
+            fitBounds = Rectangle.FromSize(new Point(), PaperSize).Inset(PageMargin);
         }
     }
-    private PageSize _paperSize = PageSize.A4;
-    private Rectangle _fitBounds = PageSize.A4;
 
     public PdfCrosswordRenderer.CrosswordPosition CrosswordPosition { get; private set; }
 
@@ -49,29 +48,27 @@ class PdfOutputHelper
     public const float HorizontalSeparation = 30f;
     public const float VerticalSeparation = 20f;
 
-    private PdfCrosswordRenderer? crosswordRenderer;
-    private PdfClueListRenderer? acrossRenderer, downRenderer;
-
-    public void Initialize()
-    {
-        LoadFonts();
-        CreateRenderers();
-    }
+    private PdfCrosswordRenderer crosswordRenderer;
+    private PdfClueListRenderer acrossRenderer, downRenderer;
 
     /// <summary>
     /// Save the crossword and clues to a PDF file written to the provided <see cref="Stream"/>.
     /// <see cref="ChooseLayout"/> must be called first.
     /// </summary>
     /// <param name="stream">Where to send the PDF file bytes.</param>
-    public void WritePdf(Stream stream)
+    public void WritePdf(string path)
     {
-        using (PdfWriter writer = new PdfWriter(stream))
-        using (PdfDocument doc = new PdfDocument(writer))
+        try
         {
-            PdfPage page = doc.AddNewPage(PaperSize);
+            var doc = new PdfDocument(path);
+            doc.Begin();
+            LoadFonts(doc);
+            ChooseLayout();
+
+            var page = new PdfPage(PaperSize);
 
             crosswordRenderer!.Page = page;
-            crosswordRenderer.FitBounds = _fitBounds;
+            crosswordRenderer.FitBounds = fitBounds;
             crosswordRenderer.Position = CrosswordPosition;
             crosswordRenderer.FitCrossword();
             crosswordRenderer.RenderCrossword();
@@ -82,28 +79,38 @@ class PdfOutputHelper
             {
                 case PdfCrosswordRenderer.CrosswordPosition.Top:
                     Debug.Assert(CluesLayout == Layout.SideBySide);
-                    clueBounds = new Rectangle(_fitBounds);
-                    clueBounds.SetHeight(crosswordRenderer.RenderBottom - _fitBounds.GetBottom() - VerticalSeparation);
+                    // Console.WriteLine($"Top SideBySide {crosswordRenderer.RenderBottom}");
+                    clueBounds = fitBounds.WithTop(crosswordRenderer.RenderBottom - VerticalSeparation);
+                    // Console.WriteLine($"Top SideBySide {clueBounds}");
                     RenderCluesSideBySide(page, clueBounds);
+                    doc.AddPage(page);
                     break;
 
                 case PdfCrosswordRenderer.CrosswordPosition.Left:
                     Debug.Assert(CluesLayout == Layout.Vertical);
-                    clueBounds = new Rectangle(crosswordRenderer.RenderRight + HorizontalSeparation, _fitBounds.GetBottom(), _fitBounds.GetRight() - crosswordRenderer.RenderRight - HorizontalSeparation, _fitBounds.GetHeight());
+                    // Console.WriteLine($"Left Vertical {crosswordRenderer.RenderRight}");
+                    clueBounds = fitBounds.WithLeft(crosswordRenderer.RenderRight + HorizontalSeparation);
+                    // Console.WriteLine($"Left Vertical {clueBounds}");
                     RenderCluesVertically(page, clueBounds);
+                    doc.AddPage(page);
                     break;
 
                 case PdfCrosswordRenderer.CrosswordPosition.Whole:
+                    doc.AddPage(page);
+                    // Console.WriteLine($"Whole");
+
                     switch (CluesLayout)
                     {
                         case Layout.SideBySide:
-                            page = doc.AddNewPage(PaperSize);
-                            RenderCluesSideBySide(page, _fitBounds);
+                            page = new(PaperSize);
+                            RenderCluesSideBySide(page, fitBounds);
+                            doc.AddPage(page);
                             break;
 
                         case Layout.Vertical:
-                            page = doc.AddNewPage(PaperSize);
-                            RenderCluesVertically(page, _fitBounds);
+                            page = new(PaperSize);
+                            RenderCluesVertically(page, fitBounds);
+                            doc.AddPage(page);
                             break;
 
                         case Layout.SeparatePages:
@@ -111,80 +118,63 @@ class PdfOutputHelper
                             break;
 
                         case Layout.SideBySideRotated:
-                            PaperSize = PaperSize.Rotate();
-                            page = doc.AddNewPage(PaperSize);
-                            RenderCluesSideBySide(page, _fitBounds);
+                            PaperSize = PaperSize.Transposed();
+                            page = new(PaperSize);
+                            RenderCluesSideBySide(page, fitBounds);
+                            doc.AddPage(page);
                             break;
                     }
                     break;
             }
 
-            try
-            {
-                doc.Close();
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine("Exception: " + ex);
-            }
+            doc.End();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine("Exception: " + ex);
         }
 
     }
 
-    private void RenderCluesOnSeparatePages(PdfDocument pdfDoc)
+    private void RenderCluesOnSeparatePages(PdfDocument doc)
     {
-        Rectangle[] columns;
+        // TODO: two columns in landscape?
 
-        if (PageOrientation == Orientation.Portrait)
-        {
-            columns = new Rectangle[1] { _fitBounds };
-        }
-        else
-        {
-            Rectangle col1 = new Rectangle(_fitBounds);
-            col1.SetWidth((_fitBounds.GetWidth() - HorizontalSeparation) / 2);
-            Rectangle col2 = new Rectangle(col1);
-            col2.MoveRight(col1.GetWidth() + HorizontalSeparation);
-            columns = new Rectangle[2] { col1, col2 };
-        }
+        Point size = PaperSize;
+        if (size.X > size.Y)
+            size = size.Transposed();
+        
+        Rectangle bounds = Rectangle.FromSize(new Point(), size).Inset(PageMargin);
+        
+        // TODO: handle overflow
 
-        Document doc = new Document(pdfDoc, PaperSize);
-        doc.SetRenderer(new ColumnDocumentRenderer(doc, columns));
-        doc.Add(new AreaBreak(AreaBreakType.NEXT_PAGE));
-        acrossRenderer!.RenderClueList(doc);
-        doc.Add(new AreaBreak(AreaBreakType.NEXT_PAGE));
-        downRenderer!.RenderClueList(doc);
-        doc.Close();
+        var page = new PdfPage(size);
+        acrossRenderer.RenderClueList(page, bounds);
+        doc.AddPage(page);
+
+        page = new PdfPage(size);
+        downRenderer.RenderClueList(page, bounds);
+        doc.AddPage(page);
     }
 
     private void RenderCluesVertically(PdfPage page, Rectangle bounds)
     {
-        PdfCanvas pdfCanvas = new PdfCanvas(page);
-        Rectangle clueBounds = new Rectangle(bounds);
-        float acrossHeight = acrossRenderer!.CalculateHeight(clueBounds.GetWidth());
-        acrossRenderer.RenderClueList(pdfCanvas, clueBounds);
-        clueBounds.DecreaseHeight(acrossHeight + VerticalSeparation);
-        downRenderer!.RenderClueList(pdfCanvas, clueBounds);
+        Rectangle clueBounds = bounds;
+        float acrossBottom = acrossRenderer.RenderClueList(page, clueBounds);
+        clueBounds = clueBounds.WithTop(acrossBottom - VerticalSeparation);
+        downRenderer!.RenderClueList(page, clueBounds);
     }
 
     private void RenderCluesSideBySide(PdfPage page, Rectangle bounds)
     {
-        PdfCanvas pdfCanvas = new PdfCanvas(page);
-        Rectangle clueBounds = new Rectangle(bounds);
-        clueBounds.SetWidth((_fitBounds.GetWidth() - HorizontalSeparation) / 2);
-        acrossRenderer!.RenderClueList(pdfCanvas, clueBounds);
-        clueBounds.MoveRight(clueBounds.GetWidth() + HorizontalSeparation);
-        downRenderer!.RenderClueList(pdfCanvas, clueBounds);
+        Rectangle col1 = bounds.WithRight(bounds.CentreX - HorizontalSeparation/2f);
+        Rectangle col2 = bounds.WithLeft(col1.Right + HorizontalSeparation);
+        
+        acrossRenderer.RenderClueList(page, col1);
+        downRenderer.RenderClueList(page, col2);
     }
 
-    /// <summary>
-    /// Choose a layout for the crossword and clues.
-    /// <c>Board</c>, <c>AcrossClues</c> and <c>DownClues</c> must be set first.
-    /// After this operation, the following properties will have valid values
-    /// reflecting the outcome of the layout planning process:
-    /// <c>PageOrientation</c>, <c>PaperSize</c>, <c>CrosswordPosition</c>, <c>CluesLayout</c>.
-    /// </summary>
-    public void ChooseLayout()
+    void ChooseLayout()
     {
         SetupRenderers();
 
@@ -194,18 +184,18 @@ class PdfOutputHelper
         {
             // try A4 portrait
 
-            PaperSize = PageSize.A4;
+            PaperSize = PdfPage.A4;
 
             crosswordRenderer!.Position = PdfCrosswordRenderer.CrosswordPosition.Top;
-            crosswordRenderer.FitBounds = _fitBounds;
+            crosswordRenderer.FitBounds = fitBounds;
             if (crosswordRenderer.FitCrossword())
             {
                 PageOrientation = Orientation.Portrait;
 
                 // try clues below the grid
 
-                width = (_fitBounds.GetWidth() - HorizontalSeparation) / 2;
-                float htavail = crosswordRenderer.RenderBottom - _fitBounds.GetBottom() - VerticalSeparation;
+                width = (fitBounds.Width - HorizontalSeparation) / 2;
+                float htavail = crosswordRenderer.RenderBottom - fitBounds.Bottom - VerticalSeparation;
 
                 if (htavail > 144)  // don't bother trying if less than two inches (really need much more)
                 {
@@ -228,10 +218,10 @@ class PdfOutputHelper
 
                 CrosswordPosition = PdfCrosswordRenderer.CrosswordPosition.Whole;
 
-                width = _fitBounds.GetWidth();
+                width = fitBounds.Width;
                 ah = acrossRenderer!.CalculateHeight(width);
                 dh = downRenderer!.CalculateHeight(width);
-                if (ah + dh + VerticalSeparation < _fitBounds.GetHeight())
+                if (ah + dh + VerticalSeparation < fitBounds.Height)
                     CluesLayout = Layout.Vertical;
                 else // clues don't fit together on one page
                     CluesLayout = Layout.SeparatePages;
@@ -244,22 +234,22 @@ class PdfOutputHelper
         {
             // try A4 landscape
 
-            PaperSize = PageSize.A4.Rotate();
+            PaperSize = PdfPage.A4.Transposed();
 
             crosswordRenderer!.Position = PdfCrosswordRenderer.CrosswordPosition.Left;
-            crosswordRenderer.FitBounds = _fitBounds;
+            crosswordRenderer.FitBounds = fitBounds;
             if (crosswordRenderer.FitCrossword())
             {
                 PageOrientation = Orientation.Landscape;
 
                 // try clues together beside crossword
 
-                width = _fitBounds.GetRight() - crosswordRenderer.RenderRight - HorizontalSeparation;
+                width = fitBounds.Right - crosswordRenderer.RenderRight - HorizontalSeparation;
                 if (width > 144) // don't bother trying if less than two inches (really need much more)
                 {
                     ah = acrossRenderer!.CalculateHeight(width);
                     dh = downRenderer!.CalculateHeight(width);
-                    if (ah + dh < _fitBounds.GetHeight())
+                    if (ah + dh < fitBounds.Height)
                     {
                         CrosswordPosition = PdfCrosswordRenderer.CrosswordPosition.Left;
                         CluesLayout = Layout.Vertical;
@@ -274,8 +264,8 @@ class PdfOutputHelper
 
                 // will the clues fit on one page?
 
-                width = (_fitBounds.GetWidth() - HorizontalSeparation) / 2;
-                float htavail = _fitBounds.GetHeight();
+                width = (fitBounds.Width - HorizontalSeparation) / 2;
+                float htavail = fitBounds.Height;
 
                 ah = acrossRenderer!.CalculateHeight(width);
                 if (ah < htavail)
@@ -301,14 +291,14 @@ class PdfOutputHelper
 
         if (Board.Height > Board.Width) // taller than it is wide -> portrait
         { 
-            PaperSize = PageSize.A3;
+            PaperSize = PdfPage.A3;
             PageOrientation = Orientation.Portrait;
 
             // will the clues fit together on the next page?
 
-            ah = acrossRenderer!.CalculateHeight(_fitBounds.GetWidth());
-            dh = downRenderer!.CalculateHeight(_fitBounds.GetWidth());
-            if (ah + dh + VerticalSeparation < _fitBounds.GetHeight())
+            ah = acrossRenderer!.CalculateHeight(fitBounds.Width);
+            dh = downRenderer!.CalculateHeight(fitBounds.Width);
+            if (ah + dh + VerticalSeparation < fitBounds.Width)
             {
                 CluesLayout = Layout.Vertical;
 
@@ -317,8 +307,8 @@ class PdfOutputHelper
 
             // will the clues fit together on a landscape page?
 
-            width = (_fitBounds.GetHeight() - HorizontalSeparation) / 2;
-            float htavail = _fitBounds.GetWidth();
+            width = (fitBounds.Width - HorizontalSeparation) / 2;
+            float htavail = fitBounds.Width;
 
             ah = acrossRenderer.CalculateHeight(width);
             if (ah < htavail)
@@ -340,13 +330,13 @@ class PdfOutputHelper
         }
         else // wider than it is tall -> landscape
         {
-            PaperSize = PageSize.A3.Rotate();
+            PaperSize = PdfPage.A3.Transposed();
             PageOrientation = Orientation.Landscape;
 
             // will the clues fit together on the next page?
 
-            width = (_fitBounds.GetWidth() - HorizontalSeparation) / 2;
-            float htavail = _fitBounds.GetHeight();
+            width = (fitBounds.Width - HorizontalSeparation) / 2;
+            float htavail = fitBounds.Width;
 
             ah = acrossRenderer!.CalculateHeight(width);
             if (ah < htavail)
@@ -371,47 +361,39 @@ class PdfOutputHelper
 
     private PdfFont? RegularFont, BoldFont, ObliqueFont, BoldObliqueFont;
 
-    private void LoadFonts()
+    private void LoadFonts(PdfDocument doc)
     {
-        RegularFont = PdfFontFactory.CreateFont(@"fonts/FreeSans.ttf");
-        BoldFont = PdfFontFactory.CreateFont(@"fonts/FreeSansBold.ttf");
-        ObliqueFont = PdfFontFactory.CreateFont(@"fonts/FreeSansOblique.ttf");
-        BoldObliqueFont = PdfFontFactory.CreateFont(@"fonts/FreeSansBoldOblique.ttf");
-    }
-
-    private void CreateRenderers()
-    {
-        crosswordRenderer = new PdfCrosswordRenderer()
-        {
-            Font = RegularFont!,
-        };
-
-        acrossRenderer = new PdfClueListRenderer(PdfClueListRenderer.ClueDirection.Across)
-        {
-            HeadingFont = BoldFont!,
-            ClueFont = RegularFont!,
-            AnswerFont = ObliqueFont!,
-        };
-        downRenderer = new PdfClueListRenderer(PdfClueListRenderer.ClueDirection.Down)
-        {
-            HeadingFont = BoldFont!,
-            ClueFont = RegularFont!,
-            AnswerFont = ObliqueFont!,
-        };
+        RegularFont = doc.GetFont(PdfFont.Helvetica);
+        BoldFont = doc.GetFont(PdfFont.HelveticaBold);
+        ObliqueFont = doc.GetFont(PdfFont.HelveticaOblique);
+        BoldObliqueFont = doc.GetFont(PdfFont.HelveticaBoldOblique);
     }
 
     private void SetupRenderers()
     {
-        crosswordRenderer!.Board = Board;
+        crosswordRenderer.Board = Board;
         crosswordRenderer.Title = Title;
         crosswordRenderer.DrawSolution = RenderSolution;
 
-        acrossRenderer!.Clues = Across;
+        Board.GetNumberedWords(out var across, out var down);
+
+        crosswordRenderer.Font = RegularFont;
+
+        acrossRenderer.HeadingFont = BoldFont;
+        acrossRenderer.ClueFont = RegularFont;
+        acrossRenderer.AnswerFont = ObliqueFont;
+
+        downRenderer.HeadingFont = BoldFont;
+        downRenderer.ClueFont = RegularFont;
+        downRenderer.AnswerFont = ObliqueFont;
+
+        acrossRenderer.Words = across;
+        acrossRenderer.Clues = Clues;
         acrossRenderer.IncludeAnswers = RenderSolution;
 
-        downRenderer!.Clues = Down;
+        downRenderer.Words = down;
+        downRenderer.Clues = Clues;
         downRenderer.IncludeAnswers = RenderSolution;
     }
 }
 
-*/
