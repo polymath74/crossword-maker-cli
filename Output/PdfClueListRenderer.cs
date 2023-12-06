@@ -117,6 +117,5 @@ class PdfClueListRenderer
         return y;
     }
 
-    private bool _includeAnswers;
 
 }
